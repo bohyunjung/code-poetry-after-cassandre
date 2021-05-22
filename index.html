@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      border: 0;
+      overflow: hidden;
+      display: block;
+    }
+
+    canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id='c'>
+  </canvas>
+
+  <script>
+    window.onload = function () {
+
+      // 사용할 색의 HEX 코드
+      const blue = "#0096FF",
+        white = "#ffffff",
+        red = "#FF0096";
+
+      // 이동 속도 상수
+      const speed = 0.0002;
+
+      // 재정비 소요시간(프레임 수) 상수 
+      const rebalance_time = 1000;
+
+      // canvas 초기화
+      let canvas = document.getElementById('c');
+      let ctx = canvas.getContext('2d');
+
+      let
+        scale, // 캔버스에 투영할 x 최대값 (최소값은 0)
+        base, // 지수, 로그함수의 밑
+        offset_1, // 지수함수의 y 오프셋, 로그함수의 x 오프셋 
+        offset_2, // 지수함수의 x 오프셋, 로그함수의 y 오프셋
+        x, // 로그함수에 입력할 값
+        d, // 지수함수에 입력할 값은 x - d 
+        backwards; // 이동 방향
+
+      let left, right, top, bottom; // 중앙 도형 위치
+
+      let
+        rebalance_timer, // 이동 방향 전환 전 도형을 재정비하는 시간
+        p_left, p_right, p_top, p_bottom; // 이동 방향 전환 전 도형 위치
+
+      // 변수들을 임의의 값으로 설정
+      function randomizeVariables() {
+        base = Math.random() * 2 + 1;
+        offset_1 = Math.random() * 2 - 1;
+        offset_2 = Math.random() * 2 - 1;
+        d = Math.random() + 2;
+        scale = Math.random() * 5 + d;
+      }
+
+      // 브라우저 창 크기에 따라 캔버스 크기 조정
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+
+      // 캔버스 크기 초기화, 애니메이션 시작
+      function initialize() {
+        window.addEventListener('resize', resizeCanvas, false);
+        resizeCanvas();
+
+        randomizeVariables();
+        rebalance_timer = 0;
+        x = 0;
+        backwards = false;
+
+        window.requestAnimationFrame(draw);
+      }
+
+      initialize();
+
+      // 매 프레임 호출되는 계산 및 그리기 함수
+      function draw() {
+        if (rebalance_timer === 0) {
+
+          if (backwards) { // x 값 업데이트, 이동 방향 전환 (그리고 그에 따른 값 리셋)
+            if (x < 0) {
+              randomizeVariables();
+              rebalance_timer = rebalance_time;
+              [p_left, p_right, p_top, p_bottom] = [left, right, top, bottom];
+              x = 0;
+              backwards = false;
+            } else {
+              x -= speed * scale;
+            }
+          } else {
+            if (x > scale - d) {
+              randomizeVariables();
+              rebalance_timer = rebalance_time;
+              [p_left, p_right, p_top, p_bottom] = [left, right, top, bottom];
+              x = scale - d;
+              backwards = true;
+            } else {
+              x += speed * scale;
+            }
+          }
+        } else { // 도형 위치 재정비 타임
+          rebalance_timer--;
+        }
+
+        // 지수, 로그함수의 입출력 값 계산
+        let log_x, exp_x, log_y, exp_y;
+        {
+          log_x = x + d;
+          exp_x = log_x - d;
+
+          log_y = log(base, log_x, offset_1, offset_2);
+          exp_y = exp(base, exp_x, offset_2, offset_1);
+
+          log_y = log_y < 0 ? 0 : log_y;
+          exp_y = exp_y < 0 ? 0 : exp_y;
+        }
+
+        // 캔버스에 투영할 값(0  ~ 1)으로 환산
+        left = exp_x / scale;
+        right = log_x / scale;
+        top = 1 - (exp_y < scale ? exp_y / scale : 1);
+        bottom = 1 - (log_y < scale ? log_y / scale : 1);
+
+        // 도형 위치 재정비
+        if (rebalance_timer > 0) {
+          left = p_left + (left - p_left) * (rebalance_time - rebalance_timer) / rebalance_time;
+          right = p_right + (right - p_right) * (rebalance_time - rebalance_timer) / rebalance_time;
+          top = p_top + (top - p_top) * (rebalance_time - rebalance_timer) / rebalance_time;
+          bottom = p_bottom + (bottom - p_bottom) * (rebalance_time - rebalance_timer) / rebalance_time;
+        }
+
+        if (top > bottom) {
+          [top, bottom] = [bottom, top];
+        }
+
+        // 실제 캔버스에 그릴 좌표를 계산하고 도형 생성
+        {
+          let
+            width_x = canvas.width,
+            height_y = canvas.height,
+            left_x = width_x * left,
+            right_x = width_x * right,
+            bottom_y = height_y * bottom,
+            top_y = height_y * top;
+
+          // ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // 가운데 사각형
+          drawGradientRect(
+            [left_x, top_y, left_x, bottom_y], [0, blue], [1, red],
+            [left_x, top_y], [left_x, bottom_y], [right_x, bottom_y], [right_x, top_y]
+          );
+          // 왼쪽 사다리꼴
+          drawGradientRect(
+            [0, 0, 0, height_y], [0, white], [bottom, red],
+            [0, 0], [left_x, top_y], [left_x, bottom_y], [0, height_y]
+          );
+          // 오른쪽 사다리꼴
+          drawGradientRect(
+            [0, 0, 0, height_y], [top, blue], [1, white],
+            [right_x, top_y], [right_x, bottom_y], [width_x, height_y], [width_x, 0]
+          );
+          window.requestAnimationFrame(draw);
+        }
+      }
+
+      // 그라디언트가 적용된 사각형 그리기
+      function drawGradientRect(grdCoords, cs1, cs2, p1, p2, p3, p4) {
+        let grd = ctx.createLinearGradient(...grdCoords);
+        grd.addColorStop(...cs1);
+        grd.addColorStop(...cs2);
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.moveTo(...p1);
+        ctx.lineTo(...p2);
+        ctx.lineTo(...p3);
+        ctx.lineTo(...p4);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // 로그 함수
+      function log(base, x, offset_x, offset_y) {
+        return baseLog(base, x - offset_x < 0 ? 0 : x - offset_x) + offset_y;
+      }
+
+      // 지수 함수
+      function exp(base, x, offset_x, offset_y) {
+        return Math.pow(base, x - offset_x) + offset_y;
+      }
+
+      // 로그 함수에서 밑 값을 다양하게 사용하기 위한 함수
+      function baseLog(base, number) {
+        return Math.log(number) / Math.log(base);
+      }
+    };
+  </script>
+</body>
+
+</html>
